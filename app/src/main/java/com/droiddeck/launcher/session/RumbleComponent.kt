@@ -4,6 +4,7 @@ import android.net.LocalServerSocket
 import android.content.SharedPreferences
 import android.os.Build
 import android.os.CombinedVibration
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -16,37 +17,23 @@ import com.droiddeck.launcher.input.PadBridge
 import java.io.DataInputStream
 import kotlin.math.max
 
-/**
- * Rumble for the pad, on the motors in the player's hands.
- *
- * When a game plays a force-feedback effect on the fake pad (or Steam Input sends the Deck's
- * rumble report), the fake evdev layer inside the guest connects to the abstract socket [NAME]
- * and sends one packet: strong, weak, duration in ms and the pad slot, four little-endian 16-bit
- * values. This listens for those and plays the effect on the physical controller that last drove
- * the pad (PadBridge.activeControllerId) when Android exposes its motors - strong and weak
- * separately where it has two - and otherwise on the device's own vibrator, with the stronger
- * motor's strength: the on-screen pad, or a controller without rumble. Best effort both ways: a
- * missing listener costs the guest nothing, and a bad packet is dropped.
- */
 class RumbleComponent : SessionPart() {
     @Volatile private var server: LocalServerSocket? = null
     private var phone: Motors? = null
-    /** Where the last effect went, so the next one (or a stop) can end it there. */
-    private var playing: Motors? = null
-    private var controllerId = PadBridge.NO_CONTROLLER
-    private var controller: Motors? = null
+    private val playing = HashMap<Int, Motors>()
+    private val sent = HashMap<Int, Sent>()
+    private val controllers = HashMap<Int, Motors?>()
     private var preferences: SharedPreferences? = null
     private var enabled = false
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == null || key == "rumble") refreshEnabled()
     }
 
-    /** The motors of the controller with this input device id, or null when it has none. Tests swap it. */
     internal var controllerMotors: (Int) -> Motors? = ::lookupController
 
     @Synchronized private fun refreshEnabled() {
         enabled = app()?.let { ControllerPrefs.rumbleEnabled(it) } == true
-        if (!enabled) { playing?.cancel(); playing = null }
+        if (!enabled) cancelAll()
     }
 
     override fun start() {
@@ -64,11 +51,10 @@ class RumbleComponent : SessionPart() {
                 try {
                     val bytes = ByteArray(8)
                     DataInputStream(client.inputStream).readFully(bytes)
-                    buzz(u16(bytes, 0), u16(bytes, 2), u16(bytes, 4))
+                    buzz(u16(bytes, 0), u16(bytes, 2), u16(bytes, 4), u16(bytes, 6))
                 } catch (e: Exception) {
-                    // A partial packet or a closed peer: nothing to play.
                 } finally {
-                    try { client.close() } catch (e: Exception) { /* already gone */ }
+                    try { client.close() } catch (e: Exception) {   }
                 }
             }
         }, "rumble").apply { isDaemon = true; start() }
@@ -79,46 +65,55 @@ class RumbleComponent : SessionPart() {
         preferences?.unregisterOnSharedPreferenceChangeListener(preferenceListener)
         preferences = null
         enabled = false
-        playing?.cancel()
-        playing = null
+        cancelAll()
         phone = null
-        controller = null
-        controllerId = PadBridge.NO_CONTROLLER
+        controllers.clear()
         val s = server
         server = null
-        try { s?.close() } catch (e: Exception) { /* the accept loop ends on the next wake */ }
+        try { s?.close() } catch (e: Exception) {   }
     }
 
     private fun u16(b: ByteArray, at: Int): Int = (b[at].toInt() and 0xFF) or ((b[at + 1].toInt() and 0xFF) shl 8)
 
-    @Synchronized private fun buzz(strong: Int, weak: Int, ms: Int) {
+    @Synchronized private fun buzz(strong: Int, weak: Int, ms: Int, slot: Int) {
         if (!enabled) return
-        val target = target()
-        if (target !== playing) {
-            playing?.cancel()
-            playing = target
-            target?.let { Log.i(TAG, "rumble: playing on ${it.name}") }
+        val target = target(slot)
+        val previous = playing[slot]
+        if (target !== previous) {
+            previous?.cancel()
+            sent.remove(slot)
+            if (target == null) playing.remove(slot) else playing[slot] = target
+            target?.let { Log.i(TAG, "rumble: slot $slot playing on ${it.name}") }
         }
         if (target == null) return
-        if ((strong == 0 && weak == 0) || ms == 0) { target.cancel(); return }
+        if ((strong == 0 && weak == 0) || ms == 0) { target.cancel(); sent.remove(slot); return }
+        val now = SystemClock.uptimeMillis()
+        val last = sent[slot]
+        if (last != null && (now - last.at < MIN_GAP_MS || (last.strong == strong && last.weak == weak && now < last.until))) return
+        val duration = ms.toLong().coerceIn(1L, 5000L)
         try {
-            target.play(strong, weak, ms.toLong().coerceIn(1L, 5000L))
+            target.play(strong, weak, duration)
+            sent[slot] = Sent(strong, weak, now, now + duration)
         } catch (e: Exception) {
             Log.w(TAG, "rumble: ${target.name}: $e")
         }
     }
 
-    /** The active controller's motors when it has any, else the phone's. */
-    private fun target(): Motors? {
-        val id = PadBridge.activeControllerId()
-        if (id != controllerId) {
-            controllerId = id
-            controller = if (id == PadBridge.NO_CONTROLLER) null else try { controllerMotors(id) } catch (e: Exception) { null }
-        }
-        return controller ?: phone
+    private fun target(slot: Int): Motors? {
+        val id = PadBridge.controllerForSlot(slot)
+        if (id == PadBridge.NO_CONTROLLER) return phone
+        if (!controllers.containsKey(id)) controllers[id] = try { controllerMotors(id) } catch (e: Exception) { null }
+        return controllers[id] ?: phone
     }
 
-    /** One place an effect can play. Strengths are the evdev 0..65535 magnitudes. */
+    private fun cancelAll() {
+        playing.values.toSet().forEach { it.cancel() }
+        playing.clear()
+        sent.clear()
+    }
+
+    private data class Sent(val strong: Int, val weak: Int, val at: Long, val until: Long)
+
     internal interface Motors {
         val name: String
         fun play(strong: Int, weak: Int, ms: Long)
@@ -131,7 +126,6 @@ class RumbleComponent : SessionPart() {
         override fun cancel() = vibrator.cancel()
     }
 
-    /** Android 12+: each of the pad's motors on its own, the lower id being the strong one. */
     @RequiresApi(31)
     private class PadMotors(override val name: String, private val manager: VibratorManager, private val ids: IntArray) : Motors {
         override fun play(strong: Int, weak: Int, ms: Long) {
@@ -148,7 +142,6 @@ class RumbleComponent : SessionPart() {
         override fun cancel() = manager.cancel()
     }
 
-    /** Before Android 12 a pad has one vibrator. */
     private class LegacyPadMotors(override val name: String, private val vibrator: Vibrator) : Motors {
         override fun play(strong: Int, weak: Int, ms: Long) = vibrator.vibrate(oneShot(vibrator, max(strong, weak), ms))
         override fun cancel() = vibrator.cancel()
@@ -156,8 +149,8 @@ class RumbleComponent : SessionPart() {
 
     companion object {
         private const val TAG = "SessionService"
-        /** Must match the fake evdev layer (fakeinput_steam.cpp). */
         const val NAME = "droiddeck-rumble"
+        const val MIN_GAP_MS = 50L
 
         private fun oneShot(vibrator: Vibrator, strength: Int, ms: Long): VibrationEffect {
             val amplitude = if (vibrator.hasAmplitudeControl()) (strength * 255L / 65535L).toInt().coerceIn(1, 255)

@@ -6,11 +6,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/**
- * The last game list the front end showed, kept in the app's files so the next start draws the
- * Steam wall on its first frame. Building the list reads every manifest and walks the added-games
- * folders, which can take a second or more; the fresh list replaces this one when it is ready.
- */
 object LibraryCache {
     private const val TAG = "LibraryCache"
     private fun file(context: Context) = File(context.filesDir, "library-cache.json")
@@ -26,6 +21,8 @@ object LibraryCache {
                 library = o.getString("library"), gameId = o.getLong("gameId"), hero = o.file("hero"),
                 lastPlayed = o.optLong("lastPlayed"), gameFiles = o.file("gameFiles"), protonPrefix = o.file("protonPrefix"),
                 icon = o.file("icon"),
+                source = o.optString("source").ifEmpty { if (o.getString("library") == Library.ADDED) Library.ADDED else Library.SOURCE_STEAM },
+                storeId = o.optString("storeId").ifEmpty { null },
             )
         }
     }.getOrElse { e -> Log.w(TAG, "unreadable, ignored: ${e.message}"); emptyList() }
@@ -36,7 +33,8 @@ object LibraryCache {
             for (g in games) array.put(
                 JSONObject().put("appId", g.appId).put("name", g.name).put("library", g.library).put("gameId", g.gameId)
                     .put("lastPlayed", g.lastPlayed).putFile("art", g.art).putFile("hero", g.hero)
-                    .putFile("gameFiles", g.gameFiles).putFile("protonPrefix", g.protonPrefix).putFile("icon", g.icon),
+                    .putFile("gameFiles", g.gameFiles).putFile("protonPrefix", g.protonPrefix).putFile("icon", g.icon)
+                    .put("source", g.source).apply { g.storeId?.let { put("storeId", it) } },
             )
             val f = file(context)
             val tmp = File(f.path + ".tmp")

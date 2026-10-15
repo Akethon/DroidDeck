@@ -1,5 +1,3 @@
-/* droiddeck-ntsync: a userspace implementation of the /dev/ntsync interface for kernels without the driver.
- * Credit: ntsync, the kernel driver and its Wine client, by Elizabeth Figura. */
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <errno.h>
@@ -1237,9 +1235,14 @@ static void ns_received(struct msghdr *msg) {
   }
 }
 
+int bl_udevmon_recvmsg(int fd, struct msghdr *msg, int flags, ssize_t (*real_recvmsg)(int, struct msghdr *, int),
+                       ssize_t *result) __attribute__((visibility("hidden")));
+
 ssize_t recvmsg(int fd, struct msghdr *msg, int flags) {
   static ssize_t (*real)(int, struct msghdr *, int);
   if (!real) real = (ssize_t (*)(int, struct msghdr *, int))dlsym(RTLD_NEXT, "recvmsg");
+  ssize_t answered;
+  if (msg && bl_udevmon_recvmsg(fd, msg, flags, real, &answered)) return answered;
   ssize_t r = real(fd, msg, flags);
   if (r >= 0 && msg && msg->msg_control && msg->msg_controllen && ns_on()) {
     int saved = errno;

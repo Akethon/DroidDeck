@@ -288,7 +288,7 @@ def main_commit(release: dict) -> str | None:
 
 
 def stable_app_release(releases: list[dict]) -> dict | None:
-    """The newest published app release. The repo also publishes gamescope and wlroots
+    """The newest published app release. The repo also publishes gamescope and desktop-package
     releases that GitHub may mark latest, so an app release is one shipping DroidDeck-<tag>.apk."""
     apps = [
         r for r in releases
@@ -368,8 +368,6 @@ def build_catalog(source: GitHub, ci: GitHub, source_repo: str, ci_repo: str) ->
         if version_code_text and version_code_text.isdigit():
             version_code = int(version_code_text)
         else:
-            # Legacy test releases did not record it. If the PR did not change build.gradle,
-            # the base value is exact; otherwise use the PR head's value.
             version_code = base_code
             try:
                 changed = source.get(f"/repos/{source_repo}/pulls/{pr}/files?per_page=100")

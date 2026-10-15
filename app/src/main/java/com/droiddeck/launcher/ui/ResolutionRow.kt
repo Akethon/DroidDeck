@@ -10,7 +10,6 @@ import androidx.compose.ui.res.stringResource
 import com.droiddeck.launcher.R
 import com.droiddeck.launcher.session.SessionDisplay
 
-/** Pre-session resolution choice, applied when the session starts. */
 @Composable
 fun ResolutionRow(
     host: MenuHost, choice: String, panel: Pair<Int, Int>, onPick: (String) -> Unit,
@@ -20,11 +19,13 @@ fun ResolutionRow(
     val size = SessionDisplay.resolveChoice(panel, choice)
     val screen = SessionDisplay.screenSize(panel)
     val choices = SessionDisplay.resolutionOptions(panel)
-    val selected = if (size == screen) SessionDisplay.MATCH_SCREEN else choice
+    val selected = if (choice == SessionDisplay.FOLLOW_SCREEN) choice
+        else if (size == screen) SessionDisplay.MATCH_SCREEN else choice
     var editCustom by remember { mutableStateOf(false) }
     val options = choices.map { value ->
         val dimensions = SessionDisplay.resolveChoice(panel, value)
         value to if (value == SessionDisplay.MATCH_SCREEN) stringResource(R.string.display_match_screen, screen.first, screen.second)
+        else if (value == SessionDisplay.FOLLOW_SCREEN) stringResource(R.string.display_follow_screen)
         else if (value == SessionDisplay.DEFAULT_RESOLUTION) stringResource(R.string.mode_res_default, "${dimensions.first}×${dimensions.second}")
         else "${dimensions.first}×${dimensions.second}"
     } + (custom to if (selected in choices) stringResource(R.string.mode_res_custom)

@@ -21,15 +21,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * `device.txt`: what this device is and what the session was told to do, written the moment a
- * session starts so a log can be read months later without asking the reporter a single question.
- *
- * **Nothing identifying goes in here.** No serial number, no Android ID, no IMEI, no account name,
- * no network names - only what the hardware is, what the ROM is, and which of our own settings
- * were in effect. The one thing that comes close is the build fingerprint, which names the ROM and
- * its build date and is the same string on every unit of that model.
- */
 object DeviceReport {
     private const val TAG = "DeviceReport"
 
@@ -53,7 +44,7 @@ object DeviceReport {
         b.append("DroidDeck session report\n")
         b.append("========================\n")
         k("Written", SimpleDateFormat("yyyy-MM-dd HH:mm:ss zzz", Locale.US).format(Date()))
-        k("Session mode", when (mode) { SessionService.MODE_DESKTOP -> "desktop (labwc/LXQt)"; SessionService.MODE_RUN -> "a program under gamescope"; else -> "Steam client (gamescope)" })
+        k("Session mode", when (mode) { SessionService.MODE_DESKTOP -> "desktop (KDE Plasma)"; SessionService.MODE_RUN -> "a program under gamescope"; else -> "Steam client (gamescope)" })
 
         h("App")
         runCatching {
@@ -147,12 +138,11 @@ object DeviceReport {
         h("Settings in effect")
         k("Client core override", SessionPrefs.clientCpusOverride(context))
         k("  client cores", CpuCores.listOrAll(SessionPrefs.clientCpus(context)))
-        k("  game cores", CpuCores.restrictionOrEmpty(SessionPrefs.gameCpus(context)).ifEmpty { "every core (nothing sent)" })
+        k("  game cores", CpuCores.restrictionOrEmpty(SessionPrefs.gameCpus(context)).ifEmpty { "every core" })
         k("Turnip sysmem", SessionPrefs.tuSysmem(context))
         k("Zink lazy descriptors", SessionPrefs.zinkLazy(context))
         k("Threaded GL (glthread)", SessionPrefs.glThread(context))
         k("No GL error checks", SessionPrefs.noGlError(context))
-        k("Steam Deck mode", SessionPrefs.steamDeckMode(context))
         k("Steam controller", SessionPrefs.steamController(context))
         k("Upscaler", (SessionPrefs.upscalerChoices.firstOrNull { it.first == SessionPrefs.upscaler(context) }?.second ?: "Off") +
             " (sharpness ${SessionPrefs.upscaleSharpness(context)}%)")
@@ -167,7 +157,6 @@ object DeviceReport {
         k("Guest host name", SessionPrefs.guestHostname(context))
         k("DirectAudio for games", SessionPrefs.directAudio(context))
         k("Stretch 16:9 to panel", SessionPrefs.stretch16x9(context))
-        k("Client audio", if (SessionPrefs.clientDirectAudio(context)) "DirectAudio" else "classic")
         k("Microphone", SessionPrefs.micEnabled(context))
         k("On-screen controls", SessionPrefs.oscMode(context))
         k("Touch mode", SessionPrefs.touchMode(context))
@@ -190,7 +179,7 @@ object DeviceReport {
         }
         for (name in listOf("droiddeck-tu-debug", "droiddeck-driver",
                             "droiddeck-osc", "droiddeck-no-pad",
-                            "droiddeck-no-hud", "droiddeck-wlr-renderer")) {
+                            "droiddeck-no-hud")) {
             val f = File(Environment.getExternalStorageDirectory(), "Download/$name")
             if (f.isFile) k(name, FileUtils.readString(f)?.trim()?.replace('\n', ' ')?.ifEmpty { "(present, empty)" } ?: "(present)")
         }
