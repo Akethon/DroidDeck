@@ -86,6 +86,12 @@ if [ -n "${BL_VK_DRIVER:-}" ]; then
   fi
   unset bl_icd_lib
 fi
+# gamescope reports a driver that cannot start only as "failed to find physical device".
+if [ -n "${VK_DRIVER_FILES:-}" ] && [ -x /usr/local/bin/droiddeck-vkprobe ]; then
+  echo "== vulkan driver check (droiddeck-vkprobe):"
+  timeout 30 /usr/local/bin/droiddeck-vkprobe 2>&1 | tee ${BL_DEBUG_DIR:+"$BL_DEBUG_DIR/vkprobe.txt"} | sed 's/^/   /'
+  echo "== vulkan driver check exit status: ${PIPESTATUS[0]}"
+fi
 # The app's gamescope build (tools/gamescope) asks for realtime-priority Vulkan queues on this
 # switch instead of on CAP_SYS_NICE, which proot never has; it falls back to normal priority
 # where the driver refuses, and the runtime's own build ignores it. On KGSL Turnip (Mesa 26.2) it

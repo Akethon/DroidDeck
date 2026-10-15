@@ -46,7 +46,7 @@ target_link_libraries(sdnative log)
 
 # The device info window's Vulkan section: the phone's own driver, asked once through the system
 # loader (opened with dlopen, so a phone without Vulkan still loads the app).
-add_library(deviceinfo SHARED deviceinfo/vkinfo.c)
+add_library(deviceinfo SHARED deviceinfo/vkinfo.c deviceinfo/gpuprobe.c)
 target_link_libraries(deviceinfo dl)
 
 # Rebuild Termux terminal-emulator's PTY JNI helper with the app's NDK instead of carrying its

@@ -567,6 +567,10 @@ class SessionService : Service() {
         // Written first, so a session that dies in its first second still says what it ran on.
         DeviceReport.write(this, File(sessionDir, "device.txt"), SessionState.mode)
         NetworkReport.write(this, File(sessionDir, "network.txt"))
+        // Adreno phones are served by Turnip.
+        if (!com.droiddeck.launcher.core.DeviceSupport.adreno()) {
+            com.droiddeck.launcher.gpu.GpuProbe.write(File(sessionDir, "gpu-probe.txt"))
+        }
         // Everything the app decides from here on - the driver it chose, the audio line, a rival
         // client stopped, the exit status - reaches logcat and nowhere a user can get at. Mirror it.
         SessionLogCapture.start(File(sessionDir, "app.log"))
